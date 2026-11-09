@@ -160,7 +160,7 @@ impl eframe::App for XamppFixerApp {
                 ui.label(RichText::new("⚡").size(24.0_f32).color(Theme::PRIMARY));
                 ui.vertical(|ui| {
                     ui.label(RichText::new("XAMPP MySQL Medic").size(18.0_f32).strong().color(Color32::WHITE));
-                    ui.label(RichText::new("Herramienta Automática de Reparación y Rescate").size(11.0_f32).color(Theme::MUTED));
+                    ui.label(RichText::new("Herramienta Automática de Reparación • santy123371").size(11.0_f32).color(Theme::MUTED));
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

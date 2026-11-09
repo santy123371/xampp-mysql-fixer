@@ -2,7 +2,7 @@
 name = "xampp_mysql_fixer"
 version = "1.0.0"
 edition = "2024"
-authors = ["Santy"]
+authors = ["santy123371"]
 description = "Herramienta nativa para diagnosticar y reparar XAMPP MySQL / MariaDB automáticamente"
 
 [dependencies]
