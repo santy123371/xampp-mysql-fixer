@@ -53,6 +53,8 @@ impl Theme {
 pub struct XamppFixerApp {
     pub xampp_path: Option<PathBuf>,
     pub custom_path_input: String,
+    pub custom_port_input: String,
+    pub active_port: u16,
     pub report: Option<DiagnosticReport>,
     pub active_tab: ActiveTab,
     pub log_messages: Vec<String>,
@@ -70,7 +72,14 @@ impl XamppFixerApp {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| "C:\\xampp".into());
 
-        let report = xampp_path.as_ref().map(|p| Detector::diagnose(p));
+        let detected_port = xampp_path
+            .as_ref()
+            .map(|p| Detector::detect_port(p))
+            .unwrap_or(3306);
+        let custom_port_input = detected_port.to_string();
+        let active_port = detected_port;
+
+        let report = xampp_path.as_ref().map(|p| Detector::diagnose(p, Some(active_port)));
         let backups_list = xampp_path
             .as_ref()
             .map(|p| BackupManager::list_backups(p))
@@ -84,10 +93,12 @@ impl XamppFixerApp {
         let mut app = Self {
             xampp_path,
             custom_path_input,
+            custom_port_input,
+            active_port,
             report,
             active_tab: ActiveTab::AutoRepair,
             log_messages: vec![
-                "Sistemas de diagnóstico iniciados.".into(),
+                format!("Sistemas de diagnóstico iniciados (Puerto configurado: {active_port})."),
                 "Listo para operar en un clic.".into(),
             ],
             backups_list,
@@ -101,8 +112,11 @@ impl XamppFixerApp {
     }
 
     pub fn refresh_diagnosis(&mut self) {
+        if let Ok(p) = self.custom_port_input.trim().parse::<u16>() {
+            self.active_port = p;
+        }
         if let Some(ref path) = self.xampp_path {
-            let rep = Detector::diagnose(path);
+            let rep = Detector::diagnose(path, Some(self.active_port));
             self.backups_list = BackupManager::list_backups(path);
             if let Ok(log) = ServiceManager::read_error_log(path, 100) {
                 self.error_log_content = log;
@@ -141,7 +155,7 @@ impl eframe::App for XamppFixerApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(8.0_f32, 10.0_f32);
 
-            // 1. TOP HEADER BRAND & QUICK PATH
+            // 1. TOP HEADER BRAND
             ui.horizontal(|ui| {
                 ui.label(RichText::new("⚡").size(24.0_f32).color(Theme::PRIMARY));
                 ui.vertical(|ui| {
@@ -151,20 +165,56 @@ impl eframe::App for XamppFixerApp {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if let Some(ref p) = self.xampp_path {
-                        if ui.button(RichText::new("📂 Abrir Carpeta").size(12.0_f32)).clicked() {
+                        if ui.button(RichText::new("📂 Abrir XAMPP").size(12.0_f32)).clicked() {
                             ServiceManager::open_in_explorer(p);
                         }
                     }
                     if ui.button(RichText::new("🔄 Refrescar").size(12.0_f32)).clicked() {
                         trigger_refresh = true;
                     }
-                    // Small path pill
-                    ui.label(RichText::new(format!("Ruta: {}", self.custom_path_input)).size(11.0_f32).color(Theme::MUTED));
+                });
+            });
+
+            // PATH & PORT CONFIGURATION BAR
+            Theme::card_frame().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Ruta:").strong().size(12.0_f32));
+                    let path_edit = ui.add(egui::TextEdit::singleline(&mut self.custom_path_input).desired_width(260.0_f32));
+
+                    ui.add_space(8.0_f32);
+                    ui.label(RichText::new("Puerto:").strong().size(12.0_f32));
+                    let port_edit = ui.add(egui::TextEdit::singleline(&mut self.custom_port_input).desired_width(55.0_f32));
+
+                    if path_edit.lost_focus() || port_edit.lost_focus() || ui.button(RichText::new("Aplicar").size(11.5_f32)).clicked() {
+                        if let Ok(p) = self.custom_port_input.trim().parse::<u16>() {
+                            self.active_port = p;
+                        }
+                        let p = PathBuf::from(&self.custom_path_input);
+                        if Detector::is_valid_xampp(&p) {
+                            self.xampp_path = Some(p);
+                            trigger_refresh = true;
+                            self.status_notification = Some((format!("Configuración aplicada: Puerto {}", self.active_port), true));
+                        } else {
+                            self.status_notification = Some(("La ruta ingresada no parece tener XAMPP MySQL válido.".into(), false));
+                        }
+                    }
+
+                    if let Some(ref p) = self.xampp_path {
+                        if ui.button(RichText::new("Auto-detectar de my.ini").size(11.0_f32)).clicked() {
+                            let auto_p = Detector::detect_port(p);
+                            self.active_port = auto_p;
+                            self.custom_port_input = auto_p.to_string();
+                            trigger_refresh = true;
+                            self.status_notification = Some((format!("Puerto {} detectado automáticamente desde my.ini", auto_p), true));
+                        }
+                    }
                 });
             });
 
             // 2. VITAL SIGNS CARD (DASHBOARD STATUS)
             let report_snapshot = self.report.clone();
+            let current_port = self.active_port;
+
             if let Some(rep) = report_snapshot {
                 Theme::card_frame().show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -174,14 +224,14 @@ impl eframe::App for XamppFixerApp {
                                 ui.colored_label(Theme::SUCCESS, RichText::new("●").size(22.0_f32));
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new("MySQL EN EJECUCIÓN").strong().color(Theme::SUCCESS));
-                                    ui.label(RichText::new(format!("PIDs: {:?} | Escuchando en puerto 3306", pids)).size(11.0_f32).color(Theme::MUTED));
+                                    ui.label(RichText::new(format!("PIDs: {:?} | Escuchando en puerto {current_port}", pids)).size(11.0_f32).color(Theme::MUTED));
                                 });
                             }
                             ServiceState::StoppedClean => {
                                 ui.colored_label(Theme::MUTED, RichText::new("○").size(22.0_f32));
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new("MySQL DETENIDO").strong().color(Color32::WHITE));
-                                    ui.label(RichText::new("Servicio inactivo de forma limpia.").size(11.0_f32).color(Theme::MUTED));
+                                    ui.label(RichText::new(format!("Servicio inactivo de forma limpia (Puerto objetivo: {current_port}).")).size(11.0_f32).color(Theme::MUTED));
                                 });
                             }
                             ServiceState::CrashedOrphanLock(pid) => {
@@ -194,7 +244,7 @@ impl eframe::App for XamppFixerApp {
                             ServiceState::PortConflict(msg) => {
                                 ui.colored_label(Theme::WARNING, RichText::new("⚡").size(22.0_f32));
                                 ui.vertical(|ui| {
-                                    ui.label(RichText::new("CONFLICTO DE PUERTO 3306").strong().color(Theme::WARNING));
+                                    ui.label(RichText::new(format!("CONFLICTO DE PUERTO {current_port}")).strong().color(Theme::WARNING));
                                     ui.label(RichText::new(msg).size(11.0_f32).color(Theme::MUTED));
                                 });
                             }
@@ -228,7 +278,7 @@ impl eframe::App for XamppFixerApp {
 
                     // Metric Pills Row
                     ui.horizontal_wrapped(|ui| {
-                        Self::render_pill(ui, "🔌 Puerto 3306", if rep.port_open { "Ocupado" } else { "Libre" }, rep.port_open);
+                        Self::render_pill(ui, &format!("🔌 Puerto {current_port}"), if rep.port_open { "Ocupado" } else { "Libre" }, rep.port_open);
                         Self::render_pill(ui, "🗄️ Bases de Datos", &format!("{}", rep.user_databases.len()), true);
                         Self::render_pill(ui, "📦 Backups", &format!("{}", self.backups_list.len()), true);
                         if !rep.aria_logs_found.is_empty() {
@@ -288,7 +338,7 @@ impl eframe::App for XamppFixerApp {
                 let _ = ServiceManager::start_mysql(p);
                 std::thread::sleep(std::time::Duration::from_millis(600));
                 self.refresh_diagnosis();
-                self.add_log("Comando iniciar MySQL ejecutado.");
+                self.add_log(format!("Comando iniciar MySQL ejecutado (esperando en puerto {})...", self.active_port));
             }
         }
         if trigger_stop {
@@ -300,7 +350,7 @@ impl eframe::App for XamppFixerApp {
         }
         if trigger_refresh {
             self.refresh_diagnosis();
-            self.add_log("Diagnóstico actualizado.");
+            self.add_log(format!("Diagnóstico actualizado para puerto {}.", self.active_port));
         }
     }
 }
@@ -345,6 +395,7 @@ impl XamppFixerApp {
 
     fn render_auto_repair_tab(&mut self, ui: &mut egui::Ui) {
         let xampp_path_opt = self.xampp_path.clone();
+        let target_port = self.active_port;
 
         ui.vertical(|ui| {
             // HERO CARD
@@ -354,7 +405,7 @@ impl XamppFixerApp {
                         ui.label(RichText::new("🚀").size(22.0_f32));
                         ui.vertical(|ui| {
                             ui.label(RichText::new("Reparación Automática Inteligente").size(15.0_f32).strong().color(Color32::WHITE));
-                            ui.label(RichText::new("Resuelve el 95% de los fallos de MySQL en XAMPP preservando tus datos.").size(11.5_f32).color(Theme::MUTED));
+                            ui.label(RichText::new(format!("Repara el arranque de MySQL verificando en puerto {target_port} sin tocar tus datos.")).size(11.5_f32).color(Theme::MUTED));
                         });
                     });
 
@@ -368,7 +419,7 @@ impl XamppFixerApp {
                         ui.label(RichText::new("→").color(Theme::MUTED));
                         Self::render_step_badge(ui, "3", "Limpiar Logs Aria");
                         ui.label(RichText::new("→").color(Theme::MUTED));
-                        Self::render_step_badge(ui, "4", "Test de Arranque");
+                        Self::render_step_badge(ui, "4", &format!("Test Puerto {target_port}"));
                     });
 
                     ui.add_space(10.0_f32);
@@ -385,8 +436,8 @@ impl XamppFixerApp {
 
                     if ui.add_sized(btn_size, btn).clicked() {
                         if let Some(ref p) = xampp_path_opt {
-                            self.add_log("Iniciando reparación automática...");
-                            match RepairMethods::auto_repair_cascade(p) {
+                            self.add_log(format!("Iniciando reparación automática para puerto {target_port}..."));
+                            match RepairMethods::auto_repair_cascade(p, target_port) {
                                 Ok(msg) => {
                                     self.add_log(msg);
                                     self.status_notification = Some(("¡Reparación automática completada con éxito!".into(), true));
@@ -469,11 +520,11 @@ impl XamppFixerApp {
                 // METHOD 1 CARD
                 Self::render_method_card(
                     ui,
-                    "Método 1: Liberar Procesos Huérfanos y Puerto 3306",
+                    "Método 1: Liberar Procesos Huérfanos y Archivos de Bloqueo",
                     "Riesgo: Cero",
                     Theme::SUCCESS,
                     "Finaliza cualquier proceso mysqld.exe colgado en segundo plano y elimina los archivos bloqueantes mysql.pid e ib_buffer_pool.",
-                    "Útil cuando MySQL dice que el puerto 3306 está tomado o se cerró de golpe.",
+                    "Útil cuando MySQL dice que el puerto está tomado o se cerró de golpe.",
                     "Ejecutar Liberación",
                     || {
                         if let Some(ref p) = xampp_path_opt {

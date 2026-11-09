@@ -9,7 +9,7 @@ pub enum ServiceState {
     Running(Vec<u32>),      // Running with PIDs
     StoppedClean,           // Not running, no orphan locks
     CrashedOrphanLock(u32), // Not running, but mysql.pid exists with recorded PID
-    PortConflict(String),   // Port 3306 taken by another process
+    PortConflict(String),   // Port taken by another process
     XamppNotFound,
 }
 
@@ -20,6 +20,7 @@ pub struct DiagnosticReport {
     pub mysql_bin: PathBuf,
     pub data_dir: PathBuf,
     pub backup_dir: PathBuf,
+    pub configured_port: u16,
     pub state: ServiceState,
     pub port_open: bool,
     pub pid_file_exists: bool,
@@ -56,11 +57,39 @@ impl Detector {
             && path.join("mysql").join("data").exists()
     }
 
-    pub fn diagnose(xampp_path: &Path) -> DiagnosticReport {
+    /// Detecta el puerto configurado en my.ini o retorna 3306 por defecto
+    pub fn detect_port(xampp_path: &Path) -> u16 {
+        let my_ini = xampp_path.join("mysql").join("bin").join("my.ini");
+        if let Ok(content) = std::fs::read_to_string(&my_ini) {
+            let mut in_mysqld_section = false;
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                    in_mysqld_section = trimmed.eq_ignore_ascii_case("[mysqld]");
+                    continue;
+                }
+                if (in_mysqld_section || trimmed.starts_with("port"))
+                    && !trimmed.starts_with('#')
+                    && trimmed.contains("port")
+                {
+                    if let Some(val_str) = trimmed.split('=').nth(1) {
+                        if let Ok(p) = val_str.trim().parse::<u16>() {
+                            return p;
+                        }
+                    }
+                }
+            }
+        }
+        3306
+    }
+
+    pub fn diagnose(xampp_path: &Path, target_port: Option<u16>) -> DiagnosticReport {
         let mysql_bin = xampp_path.join("mysql").join("bin").join("mysqld.exe");
         let data_dir = xampp_path.join("mysql").join("data");
         let backup_dir = xampp_path.join("mysql").join("backup");
         let my_ini = xampp_path.join("mysql").join("bin").join("my.ini");
+
+        let configured_port = target_port.unwrap_or_else(|| Self::detect_port(xampp_path));
 
         // 1. Check running processes
         let mut sys = System::new_all();
@@ -76,8 +105,8 @@ impl Detector {
             .map(|(pid, _)| pid.as_u32())
             .collect();
 
-        // 2. Check port 3306
-        let port_open = Self::check_port(3306);
+        // 2. Check configured port
+        let port_open = Self::check_port(configured_port);
 
         // 3. Check mysql.pid
         let pid_file = data_dir.join("mysql.pid");
@@ -122,7 +151,7 @@ impl Detector {
         let state = if !running_pids.is_empty() {
             ServiceState::Running(running_pids)
         } else if port_open {
-            ServiceState::PortConflict("Puerto 3306 ocupado por otro servicio MySQL/MariaDB".into())
+            ServiceState::PortConflict(format!("Puerto {configured_port} ocupado por otro servicio MySQL/MariaDB"))
         } else if let Some(pid) = pid_file_value {
             ServiceState::CrashedOrphanLock(pid)
         } else {
@@ -134,6 +163,7 @@ impl Detector {
             mysql_bin,
             data_dir,
             backup_dir,
+            configured_port,
             state,
             port_open,
             pid_file_exists,

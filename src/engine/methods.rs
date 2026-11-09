@@ -199,7 +199,7 @@ impl RepairMethods {
     }
 
     /// Diagnóstico y Reparación Automática (1-Clic Cascada)
-    pub fn auto_repair_cascade(xampp_path: &Path) -> Result<String, String> {
+    pub fn auto_repair_cascade(xampp_path: &Path, port: u16) -> Result<String, String> {
         let mut steps_log = Vec::new();
         steps_log.push("--- INICIANDO REPARACIÓN AUTOMÁTICA ---".into());
 
@@ -221,12 +221,12 @@ impl RepairMethods {
             Err(e) => steps_log.push(format!("[Paso 3 - Error] {e}")),
         }
 
-        // Paso 4: Test rápido de arranque de 2 segundos
-        steps_log.push("[Paso 4] Verificando si MySQL inicia normalmente...".into());
-        let test_started = Self::test_start_mysql(xampp_path);
+        // Paso 4: Test rápido de arranque de 2 segundos en el puerto configurado
+        steps_log.push(format!("[Paso 4] Verificando si MySQL inicia en puerto {port}..."));
+        let test_started = Self::test_start_mysql(xampp_path, port);
 
         if test_started {
-            steps_log.push("¡ÉXITO TOTAL! MySQL inició correctamente tras limpiar logs corruptos.".into());
+            steps_log.push(format!("¡ÉXITO TOTAL! MySQL inició correctamente en puerto {port} tras limpiar logs corruptos."));
             let _ = Self::method_1_kill_orphans(xampp_path); // Detener el test
             return Ok(steps_log.join("\n"));
         }
@@ -239,11 +239,11 @@ impl RepairMethods {
         }
 
         // Test de arranque tras Paso 5
-        steps_log.push("[Paso 6] Verificando arranque tras reconstrucción de catálogo...".into());
-        let test_started_2 = Self::test_start_mysql(xampp_path);
+        steps_log.push(format!("[Paso 6] Verificando arranque tras reconstrucción de catálogo en puerto {port}..."));
+        let test_started_2 = Self::test_start_mysql(xampp_path, port);
 
         if test_started_2 {
-            steps_log.push("¡ÉXITO TOTAL! MySQL levantó perfectamente tras reparar los esquemas del sistema.".into());
+            steps_log.push(format!("¡ÉXITO TOTAL! MySQL levantó perfectamente en puerto {port} tras reparar los esquemas del sistema."));
             let _ = Self::method_1_kill_orphans(xampp_path);
             Ok(steps_log.join("\n"))
         } else {
@@ -253,7 +253,7 @@ impl RepairMethods {
         }
     }
 
-    pub fn test_start_mysql(xampp_path: &Path) -> bool {
+    pub fn test_start_mysql(xampp_path: &Path, port: u16) -> bool {
         let mysqld = xampp_path.join("mysql").join("bin").join("mysqld.exe");
         if !mysqld.exists() {
             return false;
@@ -269,11 +269,11 @@ impl RepairMethods {
             Err(_) => return false,
         };
 
-        // Poll port 3306 for up to 3 seconds
+        // Poll configured port for up to 3 seconds
         let mut started = false;
         for _ in 0..10 {
             std::thread::sleep(Duration::from_millis(300));
-            if Detector::check_port(3306) {
+            if Detector::check_port(port) {
                 started = true;
                 break;
             }
