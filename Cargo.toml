@@ -1,0 +1,18 @@
+[package]
+name = "xampp_mysql_fixer"
+version = "1.0.0"
+edition = "2024"
+authors = ["Santy"]
+description = "Herramienta nativa para diagnosticar y reparar XAMPP MySQL / MariaDB automáticamente"
+
+[dependencies]
+eframe = "0.31"
+sysinfo = "0.33"
+chrono = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
