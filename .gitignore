@@ -1,4 +1,6 @@
 /target
 /*.exe
+*.old
+*.new
 .vs/
 *.pdb

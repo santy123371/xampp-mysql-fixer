@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <b>Herramienta nativa en Rust con GUI para diagnosticar y reparar automáticamente caídas de MySQL/MariaDB en XAMPP sin perder bases de datos.</b><br>
+  <b>Herramienta nativa en Rust con interfaz gráfica para diagnosticar y reparar automáticamente caídas de MySQL/MariaDB en XAMPP sin pérdida de datos.</b><br>
   <i>Fast, safe desktop GUI utility built in Rust to diagnose and auto-repair XAMPP MySQL/MariaDB crashes without losing database tables.</i>
 </p>
 
@@ -23,7 +23,7 @@
 
 <p align="center">
   <a href="https://github.com/santy123371/xampp-mysql-fixer/releases/latest">
-    <img src="https://img.shields.io/badge/📥%20Descargar%20%2F%20Download-XAMPP__FIXER.exe-success?style=for-the-badge&logo=windows" alt="Download Executable">
+    <img src="https://img.shields.io/github/v/release/santy123371/xampp-mysql-fixer?label=Descargar%20%2F%20Download%20EXE&style=for-the-badge&logo=windows&color=success" alt="Download Executable">
   </a>
 </p>
 
@@ -32,33 +32,33 @@
 ## 🇪🇸 Versión en Español
 
 ### ⚡ El Problema
-Cuando MariaDB/MySQL en XAMPP se apaga de forma inesperada (cortes de luz, reinicios forzados, procesos huérfanos o corrupción en los archivos de log), el Panel de Control de XAMPP no puede volver a iniciarlo, arrojando el clásico error:
+Cuando MariaDB/MySQL en XAMPP se detiene de forma inesperada (cortes de energía, reinicios forzados del sistema, procesos huérfanos o corrupción en las secuencias de logs), el Panel de Control de XAMPP no logra iniciarlo nuevamente, generando el mensaje de error habitual:
 
 > *"MySQL shutdown unexpectedly. This may be due to a blocked port, missing dependencies, improper privileges, a crash, or a shutdown of another method."*
 
-La solución común en foros suele ser borrar la carpeta `data` o sobreescribir con `backup`, lo cual **destruye todas tus bases de datos, tablas y datos de desarrollo**.
+La solución más difundida en foros consiste en eliminar el directorio `data` o reemplazarlo con la carpeta `backup`, lo cual **destruye todas las bases de datos del usuario, tablas y esquemas de desarrollo**.
 
-**XAMPP FIXER** resuelve este problema de raíz y de forma segura.
+**XAMPP FIXER** soluciona este problema desde la raíz de forma segura y automatizada.
 
 ### 🛡️ Características Principales
-- **Garantía Cero Pérdida de Datos**: Crea un backup de seguridad completo y fechado en `mysql/backups/data_backup_YYYYMMDD_HHMMSS` antes de realizar cualquier cambio.
+- **Garantía de Cero Pérdida de Datos**: Genera un respaldo de seguridad completo y fechado en `mysql/backups/data_backup_YYYYMMDD_HHMMSS` antes de aplicar cualquier modificación.
 - **Detección Automática**:
-  - Encuentra la ruta de instalación de XAMPP (`C:\xampp`).
-  - Detecta el puerto configurado en `my.ini` (soporta puertos estándar como `3306` o personalizados como `3307`).
-- **Diagnóstico en Vivo de Constantes Vitales**:
-  - Verifica si el puerto está ocupado o libre mediante socket TCP.
-  - Detecta procesos huérfanos `mysqld.exe` y sus PIDs.
-  - Detecta archivos de bloqueo residuales (`mysql.pid`).
-  - Identifica logs sucios o corruptos (`aria_log*`, `ib_logfile*`).
-- **Auto-Reparación en Cascada (1-Click)**: Ejecuta una secuencia progresiva de diagnóstico y reparación automática hasta que el servicio arranca con éxito.
-- **4 Métodos Manuales Quirúrgicos**:
-  1. **Matar Huérfanos y Liberar Bloqueos**: Cierra procesos colgados y elimina `mysql.pid` e `ib_buffer_pool`.
-  2. **Resetear Logs Sucios**: Purga secuencias incompletas de `aria_log*` e `ib_logfile*` manteniendo intacto `ibdata1` y las tablas de usuario.
-  3. **Restaurar Catálogos del Sistema**: Reconstruye únicamente las bases de datos internas del motor (`mysql`, `performance_schema`, `phpmyadmin`) a partir de la plantilla limpia de XAMPP sin tocar tus bases de datos.
-  4. **Modo Rescate InnoDB**: Configura `innodb_force_recovery` (niveles 1 a 6) en `my.ini` para rescatar tablas corruptas.
-- **Visor de Logs de Error**: Visualiza en tiempo real las últimas 100 líneas de `mysql_error.log`.
-- **Gestor de Backups**: Lista los backups creados y permite restaurar cualquier estado anterior con 1 click.
-- **Actualizaciones Automáticas**: Detecta nuevas versiones publicadas en GitHub y se actualiza automáticamente.
+  - Localiza la ruta de instalación de XAMPP (`C:\xampp`).
+  - Identifica el puerto configurado en `my.ini` (soporta puertos estándar como `3306` o personalizados como `3307`).
+- **Diagnóstico en Tiempo Real**:
+  - Comprueba si el puerto objetivo se encuentra ocupado o disponible mediante sockets TCP.
+  - Detecta procesos huérfanos de `mysqld.exe` y sus identificadores (PIDs).
+  - Identifica archivos residuales de bloqueo (`mysql.pid`).
+  - Detecta secuencias de logs corruptas (`aria_log*`, `ib_logfile*`).
+- **Auto-Reparación en Cascada (1 Clic)**: Ejecuta una secuencia progresiva de diagnóstico y recuperación, verificando la conectividad hasta que el servicio inicia con éxito.
+- **4 Métodos Manuales de Precisión**:
+  1. **Finalizar Procesos Huérfanos y Liberar Bloqueos**: Cierra procesos colgados y elimina `mysql.pid` junto con `ib_buffer_pool`.
+  2. **Restablecer Logs Dañados**: Purga secuencias incompletas de `aria_log*` e `ib_logfile*`, manteniendo intactos `ibdata1` y las carpetas de bases de datos de usuario.
+  3. **Restaurar Catálogos del Sistema**: Reconstruye únicamente los esquemas internos del motor (`mysql`, `performance_schema`, `phpmyadmin`) a partir de la plantilla original de XAMPP sin alterar las bases de datos del usuario.
+  4. **Modo de Recuperación InnoDB**: Configura `innodb_force_recovery` (niveles 1 a 6) en `my.ini` para operaciones de rescate.
+- **Visor del Registro de Errores**: Muestra en tiempo real las últimas 100 líneas del archivo `mysql_error.log`.
+- **Administrador de Respaldos**: Permite consultar el historial de copias de seguridad y restaurar cualquier estado previo con 1 solo clic.
+- **Detección de Actualizaciones**: Comprueba automáticamente si existen nuevas versiones disponibles en GitHub y permite actualizar la aplicación directamente.
 
 ### 🚀 Compilación desde el Código Fuente
 ```powershell
@@ -69,7 +69,10 @@ cd xampp-mysql-fixer
 # Compilar en modo Release
 cargo build --release
 ```
-El ejecutable optimizado se generará en `target/release/XAMPP_FIXER.exe`.
+El archivo binario ejecutable se generará en:
+```text
+target/release/XAMPP_FIXER.exe
+```
 
 ---
 

@@ -32,7 +32,6 @@ jobs:
         id: meta
         shell: bash
         run: |
-          # Read version from Cargo.toml
           CARGO_VER=$(grep '^version = ' Cargo.toml | head -n1 | sed -E 's/version = "(.*)"/\1/')
           
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
@@ -46,7 +45,7 @@ jobs:
           echo "tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "version=${CLEAN_VER}" >> "$GITHUB_OUTPUT"
           echo "title=XAMPP FIXER v${CLEAN_VER}" >> "$GITHUB_OUTPUT"
-          echo "Extracted Version: ${CLEAN_VER} (Tag: ${TAG_NAME})"
+          echo "Version: ${CLEAN_VER} (Tag: ${TAG_NAME})"
 
       - name: Build release executable
         run: cargo build --release
@@ -64,15 +63,15 @@ jobs:
             ### 🛡️ XAMPP FIXER — Versión ${{ steps.meta.outputs.version }}
             Compilación automatizada desde el commit `${{ github.sha }}`.
 
-            - **Archivo:** `XAMPP_FIXER.exe`
+            - **Archivo binario:** `XAMPP_FIXER.exe`
             - **Versión:** `${{ steps.meta.outputs.version }}`
             - **Compatibilidad:** Windows 10 / 11 (x64)
             - **Autor:** santy123371 (Santiago Diaz)
 
             #### 🚀 Instrucciones de descarga y uso
-            1. Descargá `XAMPP_FIXER.exe` en la sección **Assets** inferior.
-            2. Doble clic para ejecutar directamente (no requiere instalador).
-            3. La app incluye detección y auto-actualización automática para futuras versiones.
+            1. Descargar `XAMPP_FIXER.exe` desde la sección **Assets** inferior.
+            2. Hacer doble clic para ejecutar directamente (aplicación portátil, no requiere instalación).
+            3. La aplicación cuenta con comprobación automática para futuras actualizaciones.
 
             ---
 
@@ -80,31 +79,14 @@ jobs:
             ### 🛡️ XAMPP FIXER — Version ${{ steps.meta.outputs.version }}
             Automated build compiled from commit `${{ github.sha }}`.
 
-            - **File:** `XAMPP_FIXER.exe`
+            - **Binary file:** `XAMPP_FIXER.exe`
             - **Version:** `${{ steps.meta.outputs.version }}`
             - **Compatibility:** Windows 10 / 11 (x64)
             - **Author:** santy123371 (Santiago Diaz)
 
             #### 🚀 Download & Usage
             1. Download `XAMPP_FIXER.exe` from the **Assets** section below.
-            2. Double-click to run directly (standalone executable, no installer needed).
-            3. Includes built-in auto-update checking for future releases.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update Latest Release Tag
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: "XAMPP FIXER (Latest Build - v${{ steps.meta.outputs.version }})"
-          draft: false
-          prerelease: false
-          files: target/release/XAMPP_FIXER.exe
-          body: |
-            ## 🇪🇸 Última versión disponible / 🇬🇧 Latest available build
-            **Versión actual / Current Version:** `${{ steps.meta.outputs.version }}`
-
-            - **Descarga directa / Direct download:** `XAMPP_FIXER.exe`
-            - **Commit:** `${{ github.sha }}`
+            2. Double-click to run directly (standalone executable, no installation required).
+            3. Includes built-in automatic check for future updates.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
