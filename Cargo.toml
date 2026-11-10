@@ -5,6 +5,10 @@ edition = "2024"
 authors = ["santy123371"]
 description = "Herramienta nativa para diagnosticar y reparar XAMPP MySQL / MariaDB automáticamente"
 
+[[bin]]
+name = "XAMPP_FIXER"
+path = "src/main.rs"
+
 [dependencies]
 eframe = "0.31"
 sysinfo = "0.33"

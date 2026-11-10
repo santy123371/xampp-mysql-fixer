@@ -9,7 +9,7 @@ fn main() {
         res.set("FileDescription", "XAMPP FIXER - Herramienta Automática de Reparación MySQL");
         res.set("CompanyName", "santy123371");
         res.set("LegalCopyright", "Copyright (C) 2026 santy123371");
-        res.set("OriginalFilename", "xampp_mysql_fixer.exe");
+        res.set("OriginalFilename", "XAMPP_FIXER.exe");
         res.set("Comments", "Desarrollado por santy123371");
         let _ = res.compile();
     }
