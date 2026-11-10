@@ -15,6 +15,12 @@
   <img src="https://img.shields.io/badge/Author-santy123371-crimson.svg" alt="Author">
 </p>
 
+<p align="center">
+  <a href="https://github.com/santy123371/xampp-mysql-fixer/releases/latest">
+    <img src="https://img.shields.io/badge/📥%20Download-XAMPP__FIXER.exe-success?style=for-the-badge&logo=windows" alt="Download Executable">
+  </a>
+</p>
+
 ---
 
 ## ⚡ The Problem

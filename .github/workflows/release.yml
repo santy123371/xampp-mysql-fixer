@@ -1,0 +1,66 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build executable
+        run: cargo build --release
+
+      - name: Set Release Metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "title=XAMPP FIXER ${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            echo "title=XAMPP FIXER (Latest Build)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          draft: false
+          prerelease: false
+          files: target/release/XAMPP_FIXER.exe
+          body: |
+            ### 🛡️ XAMPP FIXER — Standalone Windows Executable
+
+            Automated build compiled directly from commit `${{ github.sha }}`.
+
+            - **Binary:** `XAMPP_FIXER.exe`
+            - **Platform:** Windows 10 / 11 (x64)
+            - **Author:** santy123371
+
+            #### 🚀 How to use
+            1. Download `XAMPP_FIXER.exe` below.
+            2. Double-click to run (no installer required).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
