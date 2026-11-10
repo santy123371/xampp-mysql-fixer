@@ -9,6 +9,7 @@ description = "Herramienta nativa para diagnosticar y reparar XAMPP MySQL / Mari
 eframe = "0.31"
 sysinfo = "0.33"
 chrono = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [build-dependencies]
 winres = "0.1"
