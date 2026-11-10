@@ -178,6 +178,17 @@ impl XamppFixerApp {
         let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
         self.log_messages.push(format!("[{timestamp}] {}", text.into()));
     }
+
+    fn render_status_led(ui: &mut egui::Ui, color: Color32, is_active: bool) {
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(16.0_f32, 16.0_f32), egui::Sense::hover());
+        let center = rect.center();
+        if is_active {
+            ui.painter().circle_filled(center, 7.5_f32, color.gamma_multiply(0.25));
+            ui.painter().circle_filled(center, 4.5_f32, color);
+        } else {
+            ui.painter().circle_stroke(center, 5.0_f32, Stroke::new(1.5_f32, color));
+        }
+    }
 }
 
 impl eframe::App for XamppFixerApp {
@@ -336,35 +347,35 @@ impl eframe::App for XamppFixerApp {
                         // Left: Big Status Icon & Title
                         match &rep.state {
                             ServiceState::Running(pids) => {
-                                ui.colored_label(Theme::SUCCESS, RichText::new("●").size(22.0_f32));
+                                Self::render_status_led(ui, Theme::SUCCESS, true);
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new("MySQL EN EJECUCIÓN").strong().color(Theme::SUCCESS));
-                                    ui.label(RichText::new(format!("PIDs: {:?} | Escuchando en puerto {current_port}", pids)).size(11.0_f32).color(Theme::MUTED));
+                                    ui.label(RichText::new(format!("PIDs: {:?} • Escuchando en puerto {current_port}", pids)).size(11.0_f32).color(Theme::MUTED));
                                 });
                             }
                             ServiceState::StoppedClean => {
-                                ui.colored_label(Theme::MUTED, RichText::new("○").size(22.0_f32));
+                                Self::render_status_led(ui, Theme::MUTED, false);
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new("MySQL DETENIDO").strong().color(Color32::WHITE));
                                     ui.label(RichText::new(format!("Servicio inactivo de forma limpia (Puerto objetivo: {current_port}).")).size(11.0_f32).color(Theme::MUTED));
                                 });
                             }
                             ServiceState::CrashedOrphanLock(pid) => {
-                                ui.colored_label(Theme::DANGER, RichText::new("⚠").size(22.0_f32));
+                                Self::render_status_led(ui, Theme::DANGER, true);
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new("MySQL CAÍDO / BLOQUEADO").strong().color(Theme::DANGER));
                                     ui.label(RichText::new(format!("Bloqueo activo por archivo mysql.pid (PID: {pid})")).size(11.0_f32).color(Theme::MUTED));
                                 });
                             }
                             ServiceState::PortConflict(msg) => {
-                                ui.colored_label(Theme::WARNING, RichText::new("⚡").size(22.0_f32));
+                                Self::render_status_led(ui, Theme::WARNING, true);
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new(format!("CONFLICTO DE PUERTO {current_port}")).strong().color(Theme::WARNING));
                                     ui.label(RichText::new(msg).size(11.0_f32).color(Theme::MUTED));
                                 });
                             }
                             ServiceState::XamppNotFound => {
-                                ui.colored_label(Theme::DANGER, RichText::new("✕").size(22.0_f32));
+                                Self::render_status_led(ui, Theme::DANGER, false);
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new("XAMPP NO ENCONTRADO").strong().color(Theme::DANGER));
                                     ui.label(RichText::new("Verificá la ruta configurada.").size(11.0_f32).color(Theme::MUTED));
@@ -374,13 +385,13 @@ impl eframe::App for XamppFixerApp {
 
                         // Right: Quick Service Controls
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let btn_stop = egui::Button::new(RichText::new("⏹ Detener").size(12.0_f32))
+                            let btn_stop = egui::Button::new(RichText::new("Detener MySQL").size(12.0_f32))
                                 .fill(Color32::from_rgb(180, 40, 40));
                             if ui.add(btn_stop).clicked() {
                                 trigger_stop = true;
                             }
 
-                            let btn_start = egui::Button::new(RichText::new("▶ Iniciar").size(12.0_f32).strong())
+                            let btn_start = egui::Button::new(RichText::new("⚡ Iniciar MySQL").size(12.0_f32).strong())
                                 .fill(Color32::from_rgb(16, 140, 90));
                             if ui.add(btn_start).clicked() {
                                 trigger_start = true;
@@ -394,7 +405,7 @@ impl eframe::App for XamppFixerApp {
                     // Metric Pills Row
                     ui.horizontal_wrapped(|ui| {
                         Self::render_pill(ui, &format!("🔌 Puerto {current_port}"), if rep.port_open { "Ocupado" } else { "Libre" }, rep.port_open);
-                        Self::render_pill(ui, "📁 Bases de Datos", &format!("{}", rep.user_databases.len()), true);
+                        Self::render_pill(ui, "💾 Bases de Datos", &format!("{}", rep.user_databases.len()), true);
                         Self::render_pill(ui, "📦 Backups", &format!("{}", self.backups_list.len()), true);
                         if !rep.aria_logs_found.is_empty() {
                             Self::render_pill(ui, "⚠ Logs Aria", &format!("{}", rep.aria_logs_found.len()), false);
@@ -409,9 +420,9 @@ impl eframe::App for XamppFixerApp {
             // Notification Banner
             if let Some((ref msg, is_ok)) = self.status_notification {
                 let (bg, border, text_color, icon) = if is_ok {
-                    (Theme::SUCCESS_BG, Theme::SUCCESS, Color32::WHITE, "✓")
+                    (Theme::SUCCESS_BG, Theme::SUCCESS, Color32::WHITE, "⚡")
                 } else {
-                    (Theme::DANGER_BG, Theme::DANGER, Color32::WHITE, "✕")
+                    (Theme::DANGER_BG, Theme::DANGER, Color32::WHITE, "⚠")
                 };
 
                 Frame::NONE
@@ -433,7 +444,7 @@ impl eframe::App for XamppFixerApp {
                 Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::AutoRepair, "⚡ Reparación");
                 Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::ManualMethods, "🔧 Métodos");
                 Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::Backups, "💾 Backups");
-                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::ErrorLog, "📋 Logs");
+                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::ErrorLog, "📜 Logs");
                 let updates_label = match &self.update_status {
                     UpdateStatus::Available(_) => "🚀 Actualizaciones (1)",
                     _ => "🚀 Actualizaciones",
@@ -521,7 +532,7 @@ impl eframe::App for XamppFixerApp {
 
                             ui.add_space(12.0_f32);
                             ui.horizontal(|ui| {
-                                if ui.button(RichText::new("✓ Sí, Actualizar Ahora").strong().size(12.5_f32).color(Color32::WHITE)).clicked() {
+                                if ui.button(RichText::new("⚡ Sí, Actualizar Ahora").strong().size(12.5_f32).color(Color32::WHITE)).clicked() {
                                     trigger_modal_update_url = Some(info_clone.download_url);
                                     self.show_update_modal = false;
                                 }
@@ -996,7 +1007,7 @@ impl XamppFixerApp {
                 UpdateStatus::Idle => {
                     Theme::card_frame().show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("ℹ").size(18.0_f32));
+                            ui.label(RichText::new("💡").size(18.0_f32));
                             ui.label(RichText::new("Hacé clic en 'Buscar Actualizaciones' para verificar si hay una nueva versión en GitHub.").color(Theme::MUTED));
                         });
                     });
@@ -1018,7 +1029,7 @@ impl XamppFixerApp {
                         .inner_margin(Margin::same(14))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
-                                ui.colored_label(Theme::SUCCESS, RichText::new("✓").size(24.0_f32).strong());
+                                ui.label(RichText::new("🚀").size(24.0_f32));
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new(format!("¡Estás en la última versión disponible (v{v})!")).strong().size(14.0_f32).color(Color32::WHITE));
                                     ui.label(RichText::new("Tu aplicación cuenta con todos los últimos métodos de reparación y diagnósticos actualizados.").size(11.5_f32).color(Color32::from_rgb(209, 250, 229)));
