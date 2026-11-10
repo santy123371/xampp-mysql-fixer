@@ -62,6 +62,7 @@ pub struct XamppFixerApp {
     pub error_log_content: String,
     pub force_recovery_level: u32,
     pub status_notification: Option<(String, bool)>,
+    pub logo_texture: Option<egui::TextureHandle>,
 }
 
 impl XamppFixerApp {
@@ -105,6 +106,7 @@ impl XamppFixerApp {
             error_log_content: String::new(),
             force_recovery_level: initial_level,
             status_notification: None,
+            logo_texture: None,
         };
 
         app.refresh_diagnosis();
@@ -148,6 +150,16 @@ impl eframe::App for XamppFixerApp {
         visuals.widgets.active.corner_radius = CornerRadius::same(6);
         ctx.set_visuals(visuals);
 
+        if self.logo_texture.is_none() {
+            let img_bytes = include_bytes!("../icon_square.png");
+            if let Ok(dyn_img) = image::load_from_memory(img_bytes) {
+                let rgba = dyn_img.to_rgba8();
+                let size = [rgba.width() as usize, rgba.height() as usize];
+                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                self.logo_texture = Some(ctx.load_texture("app_logo", color_image, egui::TextureOptions::LINEAR));
+            }
+        }
+
         let mut trigger_refresh = false;
         let mut trigger_start = false;
         let mut trigger_stop = false;
@@ -157,10 +169,17 @@ impl eframe::App for XamppFixerApp {
 
             // 1. TOP HEADER BRAND
             ui.horizontal(|ui| {
-                ui.label(RichText::new("⚡").size(24.0_f32).color(Theme::PRIMARY));
+                if let Some(ref tex) = self.logo_texture {
+                    ui.image((tex.id(), Vec2::new(38.0_f32, 38.0_f32)));
+                } else {
+                    ui.label(RichText::new("⚡").size(24.0_f32).color(Theme::PRIMARY));
+                }
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("XAMPP MySQL Medic").size(18.0_f32).strong().color(Color32::WHITE));
-                    ui.label(RichText::new("Herramienta Automática de Reparación • santy123371").size(11.0_f32).color(Theme::MUTED));
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("XAMPP ").size(19.0_f32).strong().color(Color32::WHITE));
+                        ui.label(RichText::new("FIXER").size(19.0_f32).strong().color(Color32::from_rgb(239, 68, 68)));
+                    });
+                    ui.label(RichText::new("Herramienta Automática de Reparación MySQL • santy123371").size(11.0_f32).color(Theme::MUTED));
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

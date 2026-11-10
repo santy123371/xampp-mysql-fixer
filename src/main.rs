@@ -26,7 +26,7 @@ fn main() -> eframe::Result {
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_inner_size(Vec2::new(780.0_f32, 580.0_f32))
         .with_min_inner_size(Vec2::new(700.0_f32, 500.0_f32))
-        .with_title("XAMPP MySQL Medic & Auto-Fixer")
+        .with_title("XAMPP FIXER - MySQL Medic & Auto-Repair")
         .with_active(true);
 
     if let Some(icon) = load_icon() {
@@ -39,7 +39,7 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "XAMPP MySQL Medic & Auto-Fixer",
+        "XAMPP FIXER",
         native_options,
         Box::new(|cc| Ok(Box::new(XamppFixerApp::new(cc)))),
     )
