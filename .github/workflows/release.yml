@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -26,23 +28,30 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Build executable
-        run: cargo build --release
-
-      - name: Set Release Metadata
+      - name: Extract Version from Cargo.toml or Tag
         id: meta
         shell: bash
         run: |
+          # Read version from Cargo.toml
+          CARGO_VER=$(grep '^version = ' Cargo.toml | head -n1 | sed -E 's/version = "(.*)"/\1/')
+          
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG_NAME="${GITHUB_REF#refs/tags/}"
-            echo "tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-            echo "title=XAMPP FIXER ${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            CLEAN_VER="${TAG_NAME#v}"
           else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-            echo "title=XAMPP FIXER (Latest Build)" >> "$GITHUB_OUTPUT"
+            TAG_NAME="v${CARGO_VER}"
+            CLEAN_VER="${CARGO_VER}"
           fi
+          
+          echo "tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${CLEAN_VER}" >> "$GITHUB_OUTPUT"
+          echo "title=XAMPP FIXER v${CLEAN_VER}" >> "$GITHUB_OUTPUT"
+          echo "Extracted Version: ${CLEAN_VER} (Tag: ${TAG_NAME})"
 
-      - name: Publish GitHub Release
+      - name: Build release executable
+        run: cargo build --release
+
+      - name: Publish Versioned Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
@@ -51,16 +60,51 @@ jobs:
           prerelease: false
           files: target/release/XAMPP_FIXER.exe
           body: |
-            ### 🛡️ XAMPP FIXER — Standalone Windows Executable
+            ## 🇪🇸 Español
+            ### 🛡️ XAMPP FIXER — Versión ${{ steps.meta.outputs.version }}
+            Compilación automatizada desde el commit `${{ github.sha }}`.
 
-            Automated build compiled directly from commit `${{ github.sha }}`.
+            - **Archivo:** `XAMPP_FIXER.exe`
+            - **Versión:** `${{ steps.meta.outputs.version }}`
+            - **Compatibilidad:** Windows 10 / 11 (x64)
+            - **Autor:** santy123371 (Santiago Diaz)
 
-            - **Binary:** `XAMPP_FIXER.exe`
-            - **Platform:** Windows 10 / 11 (x64)
-            - **Author:** santy123371
+            #### 🚀 Instrucciones de descarga y uso
+            1. Descargá `XAMPP_FIXER.exe` en la sección **Assets** inferior.
+            2. Doble clic para ejecutar directamente (no requiere instalador).
+            3. La app incluye detección y auto-actualización automática para futuras versiones.
 
-            #### 🚀 How to use
-            1. Download `XAMPP_FIXER.exe` below.
-            2. Double-click to run (no installer required).
+            ---
+
+            ## 🇬🇧 English
+            ### 🛡️ XAMPP FIXER — Version ${{ steps.meta.outputs.version }}
+            Automated build compiled from commit `${{ github.sha }}`.
+
+            - **File:** `XAMPP_FIXER.exe`
+            - **Version:** `${{ steps.meta.outputs.version }}`
+            - **Compatibility:** Windows 10 / 11 (x64)
+            - **Author:** santy123371 (Santiago Diaz)
+
+            #### 🚀 Download & Usage
+            1. Download `XAMPP_FIXER.exe` from the **Assets** section below.
+            2. Double-click to run directly (standalone executable, no installer needed).
+            3. Includes built-in auto-update checking for future releases.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Latest Release Tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "XAMPP FIXER (Latest Build - v${{ steps.meta.outputs.version }})"
+          draft: false
+          prerelease: false
+          files: target/release/XAMPP_FIXER.exe
+          body: |
+            ## 🇪🇸 Última versión disponible / 🇬🇧 Latest available build
+            **Versión actual / Current Version:** `${{ steps.meta.outputs.version }}`
+
+            - **Descarga directa / Direct download:** `XAMPP_FIXER.exe`
+            - **Commit:** `${{ github.sha }}`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

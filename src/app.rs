@@ -2,10 +2,12 @@ use crate::engine::backup::{BackupInfo, BackupManager};
 use crate::engine::detector::{Detector, DiagnosticReport, ServiceState};
 use crate::engine::methods::RepairMethods;
 use crate::engine::service::ServiceManager;
+use crate::engine::updater::{self, UpdateInfo};
 use eframe::egui::{
     self, Color32, CornerRadius, Frame, Margin, RichText, ScrollArea, Stroke, Vec2,
 };
 use std::path::PathBuf;
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum ActiveTab {
@@ -13,6 +15,23 @@ pub enum ActiveTab {
     ManualMethods,
     Backups,
     ErrorLog,
+    Updates,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum UpdateStatus {
+    Idle,
+    Checking,
+    UpToDate(String),
+    Available(UpdateInfo),
+    Downloading,
+    Failed(String),
+}
+
+pub enum UpdateEvent {
+    CheckComplete(Result<Option<UpdateInfo>, String>),
+    DownloadComplete(Result<(), String>),
 }
 
 // Colors for the modern dark palette
@@ -63,6 +82,10 @@ pub struct XamppFixerApp {
     pub force_recovery_level: u32,
     pub status_notification: Option<(String, bool)>,
     pub logo_texture: Option<egui::TextureHandle>,
+    pub update_status: UpdateStatus,
+    pub update_rx: Option<Receiver<UpdateEvent>>,
+    pub update_tx: Sender<UpdateEvent>,
+    pub show_update_modal: bool,
 }
 
 impl XamppFixerApp {
@@ -91,6 +114,15 @@ impl XamppFixerApp {
             .and_then(|r| r.innodb_force_recovery)
             .unwrap_or(1);
 
+        let (update_tx, update_rx) = channel();
+
+        // Spawn initial background check for updates
+        let tx_init = update_tx.clone();
+        std::thread::spawn(move || {
+            let res = updater::check_for_updates();
+            let _ = tx_init.send(UpdateEvent::CheckComplete(res));
+        });
+
         let mut app = Self {
             xampp_path,
             custom_path_input,
@@ -107,10 +139,23 @@ impl XamppFixerApp {
             force_recovery_level: initial_level,
             status_notification: None,
             logo_texture: None,
+            update_status: UpdateStatus::Checking,
+            update_rx: Some(update_rx),
+            update_tx,
+            show_update_modal: false,
         };
 
         app.refresh_diagnosis();
         app
+    }
+
+    pub fn trigger_check_updates(&mut self) {
+        self.update_status = UpdateStatus::Checking;
+        let tx = self.update_tx.clone();
+        std::thread::spawn(move || {
+            let res = updater::check_for_updates();
+            let _ = tx.send(UpdateEvent::CheckComplete(res));
+        });
     }
 
     pub fn refresh_diagnosis(&mut self) {
@@ -149,6 +194,37 @@ impl eframe::App for XamppFixerApp {
         visuals.widgets.active.bg_fill = Theme::PRIMARY;
         visuals.widgets.active.corner_radius = CornerRadius::same(6);
         ctx.set_visuals(visuals);
+
+        let mut events = Vec::new();
+        if let Some(ref rx) = self.update_rx {
+            while let Ok(event) = rx.try_recv() {
+                events.push(event);
+            }
+        }
+        for event in events {
+            match event {
+                UpdateEvent::CheckComplete(res) => match res {
+                    Ok(Some(info)) => {
+                        self.add_log(format!("Nueva versión disponible: v{}", info.version));
+                        self.update_status = UpdateStatus::Available(info);
+                        self.show_update_modal = true;
+                        self.status_notification = Some(("¡Nueva versión disponible! Consultá la pestaña Actualizaciones.".into(), true));
+                    }
+                    Ok(None) => {
+                        self.update_status = UpdateStatus::UpToDate(updater::current_version().to_string());
+                    }
+                    Err(e) => {
+                        self.update_status = UpdateStatus::Failed(e);
+                    }
+                },
+                UpdateEvent::DownloadComplete(res) => {
+                    if let Err(e) = res {
+                        self.update_status = UpdateStatus::Failed(e.clone());
+                        self.status_notification = Some((format!("Error en actualización: {e}"), false));
+                    }
+                }
+            }
+        }
 
         if self.logo_texture.is_none() {
             let img_bytes = include_bytes!("../icon_square.png");
@@ -190,6 +266,26 @@ impl eframe::App for XamppFixerApp {
                     }
                     if ui.button(RichText::new("🔄 Refrescar").size(12.0_f32)).clicked() {
                         trigger_refresh = true;
+                    }
+
+                    match &self.update_status {
+                        UpdateStatus::Available(info) => {
+                            if ui.button(RichText::new(format!("🚀 v{} Disponible", info.version)).size(11.5_f32).color(Theme::SUCCESS).strong()).clicked() {
+                                self.show_update_modal = true;
+                                self.active_tab = ActiveTab::Updates;
+                            }
+                        }
+                        UpdateStatus::Checking => {
+                            ui.label(RichText::new("Buscando v...").size(11.0_f32).color(Theme::MUTED));
+                        }
+                        UpdateStatus::Downloading => {
+                            ui.label(RichText::new("⏳ Descargando...").size(11.0_f32).color(Theme::WARNING));
+                        }
+                        _ => {
+                            if ui.button(RichText::new(format!("v{}", updater::current_version())).size(11.0_f32).color(Theme::MUTED)).clicked() {
+                                self.active_tab = ActiveTab::Updates;
+                            }
+                        }
                     }
                 });
             });
@@ -254,7 +350,7 @@ impl eframe::App for XamppFixerApp {
                                 });
                             }
                             ServiceState::CrashedOrphanLock(pid) => {
-                                ui.colored_label(Theme::DANGER, RichText::new("⚠️").size(22.0_f32));
+                                ui.colored_label(Theme::DANGER, RichText::new("⚠").size(22.0_f32));
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new("MySQL CAÍDO / BLOQUEADO").strong().color(Theme::DANGER));
                                     ui.label(RichText::new(format!("Bloqueo activo por archivo mysql.pid (PID: {pid})")).size(11.0_f32).color(Theme::MUTED));
@@ -298,10 +394,10 @@ impl eframe::App for XamppFixerApp {
                     // Metric Pills Row
                     ui.horizontal_wrapped(|ui| {
                         Self::render_pill(ui, &format!("🔌 Puerto {current_port}"), if rep.port_open { "Ocupado" } else { "Libre" }, rep.port_open);
-                        Self::render_pill(ui, "🗄️ Bases de Datos", &format!("{}", rep.user_databases.len()), true);
+                        Self::render_pill(ui, "📁 Bases de Datos", &format!("{}", rep.user_databases.len()), true);
                         Self::render_pill(ui, "📦 Backups", &format!("{}", self.backups_list.len()), true);
                         if !rep.aria_logs_found.is_empty() {
-                            Self::render_pill(ui, "⚠️ Logs Aria", &format!("{}", rep.aria_logs_found.len()), false);
+                            Self::render_pill(ui, "⚠ Logs Aria", &format!("{}", rep.aria_logs_found.len()), false);
                         }
                         if let Some(lvl) = rep.innodb_force_recovery {
                             Self::render_pill(ui, "🚨 Recovery Mode", &format!("Nivel {lvl}"), false);
@@ -334,10 +430,15 @@ impl eframe::App for XamppFixerApp {
             // 3. MODERN SEGMENTED TAB BAR
             ui.add_space(2.0_f32);
             ui.horizontal(|ui| {
-                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::AutoRepair, "⚡ Reparación Inteligente");
-                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::ManualMethods, "🔧 Métodos Manuales");
-                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::Backups, "💾 Copias de Seguridad");
-                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::ErrorLog, "📜 Registro de Errores");
+                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::AutoRepair, "⚡ Reparación");
+                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::ManualMethods, "🔧 Métodos");
+                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::Backups, "💾 Backups");
+                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::ErrorLog, "📋 Logs");
+                let updates_label = match &self.update_status {
+                    UpdateStatus::Available(_) => "🚀 Actualizaciones (1)",
+                    _ => "🚀 Actualizaciones",
+                };
+                Self::render_tab_button(ui, &mut self.active_tab, ActiveTab::Updates, updates_label);
             });
 
             ui.add_space(4.0_f32);
@@ -348,6 +449,7 @@ impl eframe::App for XamppFixerApp {
                 ActiveTab::ManualMethods => self.render_manual_methods_tab(ui),
                 ActiveTab::Backups => self.render_backups_tab(ui),
                 ActiveTab::ErrorLog => self.render_error_log_tab(ui),
+                ActiveTab::Updates => self.render_updates_tab(ui),
             }
         });
 
@@ -370,6 +472,79 @@ impl eframe::App for XamppFixerApp {
         if trigger_refresh {
             self.refresh_diagnosis();
             self.add_log(format!("Diagnóstico actualizado para puerto {}.", self.active_port));
+        }
+
+        let mut trigger_modal_update_url: Option<String> = None;
+        if self.show_update_modal {
+            if let UpdateStatus::Available(ref info) = self.update_status {
+                let info_clone = info.clone();
+                egui::Window::new("🚀 Actualización de XAMPP FIXER")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .frame(
+                        Frame::NONE
+                            .fill(Color32::from_rgb(22, 27, 38))
+                            .corner_radius(CornerRadius::same(12))
+                            .stroke(Stroke::new(1.5_f32, Theme::PRIMARY))
+                            .inner_margin(Margin::same(18)),
+                    )
+                    .show(ctx, |ui| {
+                        ui.set_width(380.0_f32);
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("⚡").size(26.0_f32).color(Theme::SUCCESS));
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(format!("¡Nueva versión v{} disponible!", info_clone.version)).strong().size(15.0_f32).color(Color32::WHITE));
+                                    ui.label(RichText::new(format!("Versión actual: v{}", updater::current_version())).size(11.5_f32).color(Theme::MUTED));
+                                });
+                            });
+
+                            ui.add_space(8.0_f32);
+                            ui.label(RichText::new("¿Deseás descargar e instalar esta actualización ahora?").size(12.5_f32).color(Color32::WHITE));
+                            ui.label(RichText::new("La app descargará el nuevo binario y se reiniciará automáticamente al instante sin tocar tus bases de datos.").size(11.0_f32).color(Theme::MUTED));
+
+                            if !info_clone.notes.is_empty() {
+                                ui.add_space(6.0_f32);
+                                ui.label(RichText::new("Novedades:").strong().size(11.5_f32).color(Theme::MUTED));
+                                ScrollArea::vertical().max_height(80.0_f32).show(ui, |ui| {
+                                    Frame::NONE
+                                        .fill(Theme::CONSOLE_BG)
+                                        .corner_radius(CornerRadius::same(6))
+                                        .inner_margin(Margin::same(6))
+                                        .show(ui, |ui| {
+                                            ui.set_width(ui.available_width());
+                                            ui.label(RichText::new(&info_clone.notes).size(10.5_f32).color(Color32::from_rgb(200, 205, 215)));
+                                        });
+                                });
+                            }
+
+                            ui.add_space(12.0_f32);
+                            ui.horizontal(|ui| {
+                                if ui.button(RichText::new("✓ Sí, Actualizar Ahora").strong().size(12.5_f32).color(Color32::WHITE)).clicked() {
+                                    trigger_modal_update_url = Some(info_clone.download_url);
+                                    self.show_update_modal = false;
+                                }
+                                if ui.button(RichText::new("Más tarde").size(12.0_f32)).clicked() {
+                                    self.show_update_modal = false;
+                                }
+                            });
+                        });
+                    });
+            } else {
+                self.show_update_modal = false;
+            }
+        }
+
+        if let Some(url) = trigger_modal_update_url {
+            self.update_status = UpdateStatus::Downloading;
+            self.status_notification = Some(("Descargando e instalando nueva versión de XAMPP FIXER...".into(), true));
+            self.add_log("Descargando actualización desde GitHub...");
+            let tx = self.update_tx.clone();
+            std::thread::spawn(move || {
+                let res = updater::apply_update(&url);
+                let _ = tx.send(UpdateEvent::DownloadComplete(res));
+            });
         }
     }
 }
@@ -433,11 +608,11 @@ impl XamppFixerApp {
                     // Workflow steps row
                     ui.horizontal_wrapped(|ui| {
                         Self::render_step_badge(ui, "1", "Matar Huérfanos");
-                        ui.label(RichText::new("→").color(Theme::MUTED));
+                        ui.label(RichText::new("»").color(Theme::MUTED));
                         Self::render_step_badge(ui, "2", "Backup Preventivo");
-                        ui.label(RichText::new("→").color(Theme::MUTED));
+                        ui.label(RichText::new("»").color(Theme::MUTED));
                         Self::render_step_badge(ui, "3", "Limpiar Logs Aria");
-                        ui.label(RichText::new("→").color(Theme::MUTED));
+                        ui.label(RichText::new("»").color(Theme::MUTED));
                         Self::render_step_badge(ui, "4", &format!("Test Puerto {target_port}"));
                     });
 
@@ -717,7 +892,7 @@ impl XamppFixerApp {
                             ui.horizontal(|ui| {
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new(&bkp.name).strong().color(Color32::WHITE).size(12.5_f32));
-                                    ui.label(RichText::new(format!("📅 {} | ⚖️ {:.2} MB", bkp.created_at, bkp.size_mb)).size(11.0_f32).color(Theme::MUTED));
+                                    ui.label(RichText::new(format!("📅 {} • {:.2} MB", bkp.created_at, bkp.size_mb)).size(11.0_f32).color(Theme::MUTED));
                                 });
 
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -791,5 +966,167 @@ impl XamppFixerApp {
                         });
                 });
         });
+    }
+
+    fn render_updates_tab(&mut self, ui: &mut egui::Ui) {
+        let current_v = updater::current_version();
+        let mut trigger_check = false;
+        let mut trigger_download_url: Option<String> = None;
+
+        ui.vertical(|ui| {
+            Theme::card_frame().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("🚀").size(24.0_f32));
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Centro de Actualizaciones").strong().size(16.0_f32).color(Color32::WHITE));
+                        ui.label(RichText::new(format!("Versión instalada: v{current_v} • Repositorio: santy123371/xampp-mysql-fixer")).size(11.0_f32).color(Theme::MUTED));
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let is_busy = matches!(self.update_status, UpdateStatus::Checking | UpdateStatus::Downloading);
+                        if ui.add_enabled(!is_busy, egui::Button::new(RichText::new("🔄 Buscar Actualizaciones").size(12.0_f32))).clicked() {
+                            trigger_check = true;
+                        }
+                    });
+                });
+            });
+
+            ui.add_space(6.0_f32);
+
+            match &self.update_status {
+                UpdateStatus::Idle => {
+                    Theme::card_frame().show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("ℹ").size(18.0_f32));
+                            ui.label(RichText::new("Hacé clic en 'Buscar Actualizaciones' para verificar si hay una nueva versión en GitHub.").color(Theme::MUTED));
+                        });
+                    });
+                }
+                UpdateStatus::Checking => {
+                    Theme::card_frame().show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.add_space(6.0_f32);
+                            ui.label(RichText::new("Consultando la API de GitHub en busca de nuevas versiones...").color(Color32::WHITE));
+                        });
+                    });
+                }
+                UpdateStatus::UpToDate(v) => {
+                    Frame::NONE
+                        .fill(Theme::SUCCESS_BG)
+                        .corner_radius(CornerRadius::same(8))
+                        .stroke(Stroke::new(1.0_f32, Theme::SUCCESS))
+                        .inner_margin(Margin::same(14))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.colored_label(Theme::SUCCESS, RichText::new("✓").size(24.0_f32).strong());
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(format!("¡Estás en la última versión disponible (v{v})!")).strong().size(14.0_f32).color(Color32::WHITE));
+                                    ui.label(RichText::new("Tu aplicación cuenta con todos los últimos métodos de reparación y diagnósticos actualizados.").size(11.5_f32).color(Color32::from_rgb(209, 250, 229)));
+                                });
+                            });
+                        });
+                }
+                UpdateStatus::Available(info) => {
+                    let info_clone = info.clone();
+                    Theme::hero_frame().show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("✨").size(24.0_f32));
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(format!("¡Nueva versión v{} disponible!", info_clone.version)).strong().size(15.0_f32).color(Theme::SUCCESS));
+                                    ui.label(RichText::new(format!("Título: {} • Tamaño: {:.2} MB", info_clone.title, info_clone.file_size as f64 / 1_048_576.0)).size(11.5_f32).color(Theme::MUTED));
+                                });
+                            });
+
+                            ui.add_space(8.0_f32);
+
+                            if !info_clone.notes.is_empty() {
+                                ui.label(RichText::new("Novedades de la versión:").strong().size(12.0_f32).color(Color32::WHITE));
+                                ScrollArea::vertical().max_height(100.0_f32).show(ui, |ui| {
+                                    Frame::NONE
+                                        .fill(Theme::CONSOLE_BG)
+                                        .corner_radius(CornerRadius::same(6))
+                                        .inner_margin(Margin::same(8))
+                                        .show(ui, |ui| {
+                                            ui.set_width(ui.available_width());
+                                            ui.label(RichText::new(&info_clone.notes).size(11.0_f32).color(Color32::from_rgb(220, 225, 235)));
+                                        });
+                                });
+                                ui.add_space(8.0_f32);
+                            }
+
+                            ui.horizontal(|ui| {
+                                if ui.button(RichText::new("⚡ Actualizar Automáticamente Ahora").strong().size(13.0_f32).color(Color32::WHITE)).clicked() {
+                                    trigger_download_url = Some(info_clone.download_url);
+                                }
+                                ui.label(RichText::new("La app descargará el nuevo binario y se reiniciará automáticamente al instante.").size(11.0_f32).color(Theme::MUTED));
+                            });
+                        });
+                    });
+                }
+                UpdateStatus::Downloading => {
+                    Frame::NONE
+                        .fill(Theme::WARNING_BG)
+                        .corner_radius(CornerRadius::same(8))
+                        .stroke(Stroke::new(1.0_f32, Theme::WARNING))
+                        .inner_margin(Margin::same(14))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                ui.add_space(8.0_f32);
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new("Descargando e instalando nueva versión...").strong().size(14.0_f32).color(Color32::WHITE));
+                                    ui.label(RichText::new("Por favor no cierres la app. En breve se reiniciará con la versión actualizada.").size(11.5_f32).color(Color32::from_rgb(254, 243, 199)));
+                                });
+                            });
+                        });
+                }
+                UpdateStatus::Failed(err) => {
+                    Frame::NONE
+                        .fill(Theme::DANGER_BG)
+                        .corner_radius(CornerRadius::same(8))
+                        .stroke(Stroke::new(1.0_f32, Theme::DANGER))
+                        .inner_margin(Margin::same(14))
+                        .show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.colored_label(Theme::DANGER, RichText::new("⚠").size(22.0_f32));
+                                    ui.vertical(|ui| {
+                                        ui.label(RichText::new("No se pudo verificar o descargar la actualización").strong().color(Color32::WHITE));
+                                        ui.label(RichText::new(err).size(11.0_f32).color(Color32::from_rgb(254, 202, 202)));
+                                    });
+                                });
+                                ui.add_space(6.0_f32);
+                                ui.horizontal(|ui| {
+                                    if ui.button(RichText::new("Reintentar").size(11.5_f32)).clicked() {
+                                        trigger_check = true;
+                                    }
+                                    if ui.button(RichText::new("Abrir Releases en GitHub").size(11.5_f32)).clicked() {
+                                        let _ = std::process::Command::new("cmd")
+                                            .args(["/C", "start", "", "https://github.com/santy123371/xampp-mysql-fixer/releases"])
+                                            .spawn();
+                                    }
+                                });
+                            });
+                        });
+                }
+            }
+        });
+
+        if trigger_check {
+            self.trigger_check_updates();
+            self.add_log("Búsqueda manual de actualizaciones iniciada...");
+        }
+
+        if let Some(url) = trigger_download_url {
+            self.update_status = UpdateStatus::Downloading;
+            self.status_notification = Some(("Descargando e instalando nueva versión de XAMPP FIXER...".into(), true));
+            self.add_log("Descargando nueva versión desde GitHub...");
+            let tx = self.update_tx.clone();
+            std::thread::spawn(move || {
+                let res = updater::apply_update(&url);
+                let _ = tx.send(UpdateEvent::DownloadComplete(res));
+            });
+        }
     }
 }

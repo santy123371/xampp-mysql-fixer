@@ -23,6 +23,8 @@ fn load_icon() -> Option<Arc<IconData>> {
 }
 
 fn main() -> eframe::Result {
+    engine::updater::cleanup_old_executable();
+
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_inner_size(Vec2::new(780.0_f32, 580.0_f32))
         .with_min_inner_size(Vec2::new(700.0_f32, 500.0_f32))
