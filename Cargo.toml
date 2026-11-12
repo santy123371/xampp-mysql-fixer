@@ -1,6 +1,6 @@
 [package]
 name = "xampp_mysql_fixer"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2024"
 authors = ["santy123371"]
 description = "Herramienta nativa para diagnosticar y reparar XAMPP MySQL / MariaDB automáticamente"

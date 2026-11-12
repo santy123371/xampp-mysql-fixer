@@ -120,6 +120,9 @@ impl BackupManager {
             if path.is_dir() {
                 Self::copy_dir_recursive(&path, &dest_path)?;
             } else {
+                if dest_path.exists() {
+                    crate::engine::methods::make_writable(&dest_path);
+                }
                 fs::copy(&path, &dest_path)?;
             }
         }

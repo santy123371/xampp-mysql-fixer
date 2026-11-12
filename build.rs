@@ -11,6 +11,20 @@ fn main() {
         res.set("LegalCopyright", "Copyright (C) 2026 santy123371");
         res.set("OriginalFilename", "XAMPP_FIXER.exe");
         res.set("Comments", "Desarrollado por santy123371");
+        let profile = std::env::var("PROFILE").unwrap_or_default();
+        if profile == "release" {
+            res.set_manifest(r#"
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+<trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+        <requestedPrivileges>
+            <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+        </requestedPrivileges>
+    </security>
+</trustInfo>
+</assembly>
+"#);
+        }
         let _ = res.compile();
     }
 }
