@@ -4,3 +4,5 @@
 *.new
 .vs/
 *.pdb
+*.log
+*.log.txt
